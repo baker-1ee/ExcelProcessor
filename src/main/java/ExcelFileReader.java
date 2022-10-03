@@ -27,6 +27,7 @@ public class ExcelFileReader<T extends ExcelRow> implements XSSFSheetXMLHandler.
     private final Consumer<List<T>> processor;
 
     private final LinkedHashMap<String, Field> fieldMap = new LinkedHashMap<>();
+    private final int PARTITION_SIZE = 2;
 
     private int currentRowNum = 0;
     private T currentRow;
@@ -78,7 +79,7 @@ public class ExcelFileReader<T extends ExcelRow> implements XSSFSheetXMLHandler.
     public void endRow(int rowNum) {
         if(isHeader()) return;
         this.partitionRows.add(this.currentRow);
-        if(this.partitionRows.size() == 2) {
+        if(this.partitionRows.size() == PARTITION_SIZE) {
             this.processor.accept(this.partitionRows);
             this.partitionRows = new ArrayList<>();
         }
