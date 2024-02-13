@@ -1,0 +1,34 @@
+@startuml
+class BigExcelParser {
+- {static} int PARTITION_SIZE
+- {static} int DATA_START_ROW_NUM
+- Supplier<T> instanceGenerator
+- Map<String,Field> fieldMap
+- List<String> header
+- Consumer<List<T>> processor
+- int currentRowNum
+- T currentRow
+- List<T> partitionRows
+
++ BigExcelParser(Supplier<T> instanceGenerator)
++ void processExcel(File,Consumer<List<T>>)
++ List<String> getHeader()
+
+- void setFieldMap()
+- void startRow(int)
+- void endRow(int)
+- void cell(String,String,XSSFComment)
+- StringBuilder getCellAlphabet(String)
+- boolean isHeader()
+- void endSheet()
+}
+
+interface ExcelRow {
+}
+
+interface @ExcelColumn {
+}
+
+
+SheetContentsHandler <|.. BigExcelParser
+@enduml

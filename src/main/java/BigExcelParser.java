@@ -16,41 +16,61 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class ExcelFileReader<T extends ExcelRow> implements XSSFSheetXMLHandler.SheetContentsHandler {
+public class BigExcelParser<T extends ExcelRow> implements XSSFSheetXMLHandler.SheetContentsHandler {
+
+    private static final int PARTITION_SIZE = 2;
+    private static final int DATA_START_ROW_NUM = 1;
 
     private final Supplier<T> instanceGenerator;
-    private final Consumer<List<T>> processor;
-
-    private final LinkedHashMap<String, Field> fieldMap = new LinkedHashMap<>();
-
+    private final Map<String, Field> fieldMap = new LinkedHashMap<>();
+    private final List<String> header = new ArrayList<>();
+    private Consumer<List<T>> processor;
     private int currentRowNum = 0;
+
     private T currentRow;
     private List<T> partitionRows = new ArrayList<>();
-    private final List<String> header = new ArrayList<>();
 
-    public ExcelFileReader(Supplier<T> instanceGenerator, Consumer<List<T>> processor) {
+    /**
+     * Excel File Reader 생성
+     *
+     * @param instanceGenerator Excel Data 파싱 후 담을 객체의 instance 생성기
+     */
+    public BigExcelParser(Supplier<T> instanceGenerator) {
         this.instanceGenerator = instanceGenerator;
-        this.processor = processor;
         setFieldMap();
     }
 
+    /**
+     * Excel 의 Cell 과 ExcelRow class 의 Field 맵 생성
+     */
     private void setFieldMap() {
         ExcelRow excelRow = this.instanceGenerator.get();
         Field[] fields = excelRow.getClass().getDeclaredFields();
         for (Field field : fields) {
             ExcelColumn annotation = field.getAnnotation(ExcelColumn.class);
             if (annotation == null) continue;
-            String cell = annotation.cell();
+            String cell = annotation.cellAlphabet();
             this.fieldMap.put(cell, field);
         }
     }
 
-    public void processExcel(File file) throws Exception {
+    /**
+     * Excel File 을 Streaming방식 으로 읽으면서 Chunk 단위로 사용자 정의 처리기를 수행
+     *
+     * @param file      파싱 대상 Excel File
+     * @param processor Excel Data 파싱 후 Chunk 단위로 수행할 사용자 정의 처리기
+     * @throws Exception 예외
+     */
+    public void processExcel(File file, Consumer<List<T>> processor) throws Exception {
+        this.processor = processor;
+
+        // SAX (Simple API for XML) Library 사용을 위한 boilerplate code
         OPCPackage opcPackage = OPCPackage.open(file);
         XSSFReader xssfReader = new XSSFReader(opcPackage);
         StylesTable stylesTable = xssfReader.getStylesTable();
@@ -76,10 +96,9 @@ public class ExcelFileReader<T extends ExcelRow> implements XSSFSheetXMLHandler.
 
     @Override
     public void endRow(int rowNum) {
-        if(isHeader()) return;
+        if (isHeader()) return;
         this.partitionRows.add(this.currentRow);
-        int PARTITION_SIZE = 2;
-        if(this.partitionRows.size() == PARTITION_SIZE) {
+        if (this.partitionRows.size() == PARTITION_SIZE) {
             this.processor.accept(this.partitionRows);
             this.partitionRows = new ArrayList<>();
         }
@@ -87,13 +106,15 @@ public class ExcelFileReader<T extends ExcelRow> implements XSSFSheetXMLHandler.
 
     @SneakyThrows
     @Override
-    public void cell(String columnName, String value, XSSFComment comment) {
+    // cell : Excel 의 Cell 이름 (e.g. A1, A2)
+    // value : Cell 의 값
+    public void cell(String cell, String value, XSSFComment comment) {
         if (isHeader()) {
             this.header.add(value);
             return;
         }
 
-        StringBuilder cellAlphabet = getCellAlphabet(columnName);
+        StringBuilder cellAlphabet = getCellAlphabet(cell);
         Field field = this.currentRow.getClass().getDeclaredField(this.fieldMap.get(cellAlphabet.toString()).getName());
         field.setAccessible(true);
 
@@ -102,6 +123,7 @@ public class ExcelFileReader<T extends ExcelRow> implements XSSFSheetXMLHandler.
         else throw new RuntimeException("field type not found");
     }
 
+    // Cell (e.g. A1, A2) 에서 알파벳만 추출 (e.g. A, A)
     private StringBuilder getCellAlphabet(String columnName) {
         Pattern pattern = Pattern.compile("[a-zA-Z]");
         Matcher matcher = pattern.matcher(columnName);
@@ -112,8 +134,9 @@ public class ExcelFileReader<T extends ExcelRow> implements XSSFSheetXMLHandler.
         return cellAlphabet;
     }
 
+    // Excel Data 의 Header 여부
     private boolean isHeader() {
-        return this.currentRowNum == 0;
+        return this.currentRowNum == DATA_START_ROW_NUM - 1;
     }
 
     @Override
@@ -121,6 +144,9 @@ public class ExcelFileReader<T extends ExcelRow> implements XSSFSheetXMLHandler.
         this.processor.accept(this.partitionRows);
     }
 
+    /**
+     * Excel Data 파싱 후 header 목록이 채워짐
+     */
     public List<String> getHeader() {
         return this.header;
     }

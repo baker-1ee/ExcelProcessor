@@ -6,5 +6,5 @@ import java.lang.annotation.Target;
 @Target({ElementType.FIELD})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface ExcelColumn {
-    String cell() default "";
+    String cellAlphabet();
 }
